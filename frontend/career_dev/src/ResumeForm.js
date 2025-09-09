@@ -1,78 +1,68 @@
 // ResumeForm.js
 import React, { useState } from "react";
-import ResumeAnalysis from "./ResumeAnalysis";
-import { UploadCloud, FileText, Send } from "lucide-react";
+import { CheckCircle, XCircle, Calendar, Lightbulb, UploadCloud, FileText, Send } from "lucide-react";
 
 export default function ResumeForm() {
   const [resumeFile, setResumeFile] = useState(null);
-  const [summary, setSummary] = useState(null);
   const [jobDescription, setJobDescription] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Step 1: Summarize Resume
-  const handleSummarize = async (e) => {
-    e.preventDefault();
-    if (!resumeFile) return;
-
-    const formData = new FormData();
-    formData.append("resume", resumeFile);
-
-    try {
-      setLoading(true);
-      const response = await fetch("http://127.0.0.1:8000/summarize_resume", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      try {
-        setSummary(JSON.parse(data.summary));
-      } catch {
-        setSummary({ raw_text: data.summary });
-      }
-    } catch (err) {
-      console.error("Error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Step 2: Analyze Resume vs Job Description
+  // Dummy JSON from LLM for demo purposes
+  
   const handleAnalyze = async (e) => {
-    e.preventDefault();
-    if (!resumeFile || !jobDescription) return;
+  e.preventDefault();
+  if (!resumeFile) return;
 
-    const formData = new FormData();
-    formData.append("resume", resumeFile);
-    formData.append("jd", jobDescription);
+  const formData = new FormData();
+  formData.append("resume", resumeFile);
+  if (jobDescription) formData.append("jd", jobDescription);
 
-    try {
-      setLoading(true);
-      const response = await fetch("http://127.0.0.1:8000/analyze_resume", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      setAnalysis(data.analysis);
-    } catch (err) {
-      console.error("Error:", err);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    const response = await fetch("http://127.0.0.1:8000/analyze_resume", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+    console.log("Backend response:", data);
+
+    // 🛠 Ensure analysis is an object
+    let parsed = data.analysis;
+    if (typeof parsed === "string") {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (err) {
+        console.error("Failed to parse analysis JSON:", err);
+        parsed = {};
+      }
     }
-  };
+
+    setAnalysis({
+      existing_skills: parsed.existing_skills || [],
+      missing_skills: parsed.missing_skills || [],
+      roadmap: parsed.roadmap || [],
+      recommendations: parsed.recommendations || [],
+    });
+  } catch (err) {
+    console.error(err);
+    alert("Failed to fetch analysis. See console for details.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-r from-blue-50 to-blue-100 p-8">
-      <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-3xl p-8">
+      <div className="max-w-5xl mx-auto bg-white shadow-xl rounded-3xl p-8 space-y-6">
         <h1 className="text-3xl font-bold text-center text-blue-800 mb-8">
           📄 Resume Analyzer
         </h1>
 
         {/* Upload Resume */}
-        <form
-          onSubmit={handleSummarize}
-          className="flex flex-col md:flex-row items-center gap-4 mb-6"
-        >
+        <div className="flex flex-col md:flex-row items-center gap-4">
           <label className="flex items-center gap-2 cursor-pointer bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-lg shadow">
             <UploadCloud className="text-blue-600" />
             {resumeFile ? resumeFile.name : "Upload PDF Resume"}
@@ -84,53 +74,98 @@ export default function ResumeForm() {
             />
           </label>
           <button
-            type="submit"
+            onClick={handleAnalyze}
             className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 shadow"
           >
-            <FileText /> {loading ? "Processing..." : "Summarize Resume"}
+            <FileText /> {loading ? "Analyzing..." : "Analyze Resume"}
           </button>
-        </form>
+        </div>
 
         {/* Job Description */}
         {resumeFile && (
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-700 mb-2">
-              📌 Paste Job Description
-            </h2>
+          <div>
             <textarea
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
               placeholder="Paste the job description here..."
-              className="w-full p-4 rounded-lg border border-gray-300 shadow-inner resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
-              rows={5}
+              className="w-full p-4 rounded-lg border border-gray-300 shadow-inner resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500 mt-4"
+              rows={4}
             />
-            <button
-              onClick={handleAnalyze}
-              className="mt-3 flex items-center gap-2 bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 shadow"
-            >
-              <Send /> Analyze vs Job Description
-            </button>
           </div>
         )}
 
         {/* Analysis Results */}
-        {summary && (
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-3">
-              ✅ Resume Summary
-            </h2>
-            <pre className="bg-gray-50 p-4 rounded-lg shadow-inner overflow-x-auto text-gray-700">
-              {JSON.stringify(summary, null, 2)}
-            </pre>
-          </div>
-        )}
-
         {analysis && (
-          <div className="mb-6">
-            <ResumeAnalysis analysis={analysis} />
+          <div className="space-y-6 mt-6">
+            {/* Existing Skills */}
+            <div className="bg-green-50 p-6 rounded-2xl shadow hover:shadow-lg transition">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2 text-green-700">
+                <CheckCircle /> Existing Skills
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {analysis.existing_skills.map((skill, idx) => (
+                  <span
+                    key={idx}
+                    className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium shadow-sm"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Missing Skills */}
+            <div className="bg-red-50 p-6 rounded-2xl shadow hover:shadow-lg transition">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2 text-red-700">
+                <XCircle /> Missing Skills
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {analysis.missing_skills.map((skill, idx) => (
+                  <span
+                    key={idx}
+                    className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium shadow-sm"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Roadmap */}
+            <div className="bg-white p-6 rounded-2xl shadow hover:shadow-lg transition">
+              <h3 className="text-xl font-semibold mb-6 flex items-center gap-2 text-blue-700">
+                <Calendar /> 6-Month Roadmap
+              </h3>
+              <div className="relative border-l-4 border-blue-300 pl-6 space-y-6">
+                {analysis.roadmap.map((step, idx) => (
+                  <div key={idx} className="relative">
+                    <div className="absolute -left-3 top-1 w-6 h-6 bg-blue-600 rounded-full border-2 border-white shadow"></div>
+                    <h4 className="font-semibold text-lg mb-1">
+                      Month {step.month}: {step.task}
+                    </h4>
+                    <p className="text-gray-700 text-sm mb-1">
+                      📚 <strong>Resource:</strong> {step.resource}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            <div className="bg-yellow-50 p-6 rounded-2xl shadow hover:shadow-lg transition">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2 text-yellow-700">
+                <Lightbulb /> Recommendations
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                <li>Practice and build projects to apply new skills.</li>
+                <li>Network and collaborate in developer and design communities.</li>
+                <li>Stay updated with new front-end trends & technologies.</li>
+                <li>Highlight transferable skills like problem-solving & teamwork.</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
-}
+}  

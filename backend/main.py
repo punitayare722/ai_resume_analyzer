@@ -4,6 +4,8 @@ import fitz  # PyMuPDF
 from groq import Groq
 from dotenv import load_dotenv
 import os
+import json
+
 app = FastAPI()
 
 # Enable frontend calls
@@ -15,15 +17,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 # Load environment variables from .env
 load_dotenv()
 
 # Get the API key from environment
 API_KEY = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=API_KEY)
+if not API_KEY:
+    raise ValueError("GROQ_API_KEY not found in environment variables!")
 
+client = Groq(api_key=API_KEY)
 
 
 # ---------- PDF Extraction ----------
@@ -42,27 +44,33 @@ async def summarize_resume(resume: UploadFile):
     resume_text = extract_text_from_pdf(file_bytes)
 
     prompt = f"""
-    You are an expert career assistant.
-    Here is the extracted resume text:
+You are an expert career assistant.
+Here is the extracted resume text:
 
-    {resume_text}
+{resume_text}
 
-    Summarize the resume into:
-    1. Key Skills
-    2. Projects
-    3. Certifications
-    4. Career Objective (short version)
+Summarize the resume into:
+1. Key Skills
+2. Projects
+3. Certifications
+4. Career Objective (short version)
 
-    Respond in JSON with fields: skills, projects, certifications, objective.
-    """
+Respond in strict JSON format with fields: skills, projects, certifications, objective.
+"""
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",   # balanced, structured output
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
     )
 
-    return {"summary": response.choices[0].message.content}
+    # Ensure JSON is returned
+    try:
+        parsed_summary = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        parsed_summary = {"raw_text": response.choices[0].message.content}
+
+    return {"summary": parsed_summary}
 
 
 # ---------- 2. Compare Resume with Job Description ----------
@@ -72,20 +80,21 @@ async def analyze_resume(resume: UploadFile, jd: str = Form(...)):
     resume_text = extract_text_from_pdf(file_bytes)
 
     prompt = f"""
-    You are a career coach.
-    Compare the following resume and job description.
+You are a career coach.
+Compare the following resume and job description.
 
-    Resume:
-    {resume_text}
+Resume:
+{resume_text}
 
-    Job Description:
-    {jd}
+Job Description:
+{jd}
 
-    Respond in JSON with:
-    - existing_skills: list of skills already present in resume
-    - missing_skills: list of gaps between JD and resume
-    - roadmap: step-by-step 3–6 month plan to close those gaps
-    """
+Respond ONLY in valid JSON (no explanations, no markdown) with:
+- existing_skills: list of skills already present in resume
+- missing_skills: list of skills missing compared to JD
+- roadmap: list of objects for 3–6 month plan, each with fields 'month', 'task', 'resource'
+- recommendations: list of actionable recommendations
+"""
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -93,4 +102,15 @@ async def analyze_resume(resume: UploadFile, jd: str = Form(...)):
         temperature=0.3,
     )
 
-    return {"analysis": response.choices[0].message.content}
+    raw_output = response.choices[0].message.content.strip()
+
+    # Try to clean and parse
+    try:
+        # If model wraps JSON in ```json ... ```
+        if raw_output.startswith("```"):
+            raw_output = raw_output.strip("```json").strip("```").strip()
+        parsed_analysis = json.loads(raw_output)
+    except Exception as e:
+        parsed_analysis = {"error": str(e), "raw_text": raw_output}
+
+    return {"analysis": parsed_analysis}
